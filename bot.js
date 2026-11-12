@@ -2,7 +2,7 @@ const { Telegraf, Markup } = require('telegraf');
 const { PureDB } = require('pure.db');
 const http = require('http');
 
-// --- RENDER PORT AYARI ---
+// --- RENDER PORT AYARI (Uyku modunu engellemek için) ---
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -16,7 +16,7 @@ const botToken = process.env.BOT_TOKEN;
 const grupId = process.env.GRUP_ID;
 
 if (!botToken) {
-    console.error("KRİTİK HATA: BOT_TOKEN bulunamadı!");
+    console.error("KRİTİK HATA: BOT_TOKEN bulunamadı! Lütfen Render'da Environment sekmesine ekleyin.");
     process.exit(1);
 }
 
@@ -82,54 +82,50 @@ bot.command('takas', async (ctx) => {
     await ctx.reply(ilanTablo, { parse_mode: 'Markdown' });
 });
 
-// 3. TAKAS TAMAMLANDI (PUAN BUTONU EKLENDİ)
+// 3. TAKAS TAMAMLANDI VE PUAN BUTONU
 bot.command('tamamlandi', async (ctx) => {
     const yanitlananMesaj = ctx.message.reply_to_message;
     if (!yanitlananMesaj) {
         return ctx.reply('⚠️ Takası tamamladığınız ilanın mesajına **yanıt (reply)** vererek bu komutu kullanmalısınız.');
     }
 
-    // İlan sahibinin Telegram ID'sini mesajdan ayıklamaya çalış (Basit bir yöntem)
-    // Ancak en garantisi, ilan mesajındaki "ID: 123456" kısmını okumaktır.
+    // İlan sahibinin ID'sini mesajdan ayıklıyoruz
     let ilanSahibiId = null;
-    const idMatch = yanitlananMesaj.text.match(/ID: (\d+)/);
-    if (idMatch) {
-        ilanSahibiId = idMatch[1];
+    if (yanitlananMesaj.text) {
+        const idMatch = yanitlananMesaj.text.match(/ID: (\d+)/);
+        if (idMatch) {
+            ilanSahibiId = idMatch[1];
+        }
     }
 
     if (!ilanSahibiId) {
         return ctx.reply('⚠️ İlan sahibi tespit edilemedi. Lütfen ilana yanıt verdiğinizden emin olun.');
     }
 
-    // Eğer ilan sahibi kendi ilanına /tamamlandi yazarsa puan veremesin
+    // Kendi ilanına puan vermesini engelle
     if (ctx.from.id.toString() === ilanSahibiId) {
          return ctx.reply('⚠️ Kendi ilanınızı tamamladınız. Puanı karşı taraf vermelidir.');
     }
 
-    // Puan butonunu oluştur
     const puanButonu = Markup.inlineKeyboard([
         [Markup.button.callback('⭐ 1 Puan', `puan_1_${ilanSahibiId}`), Markup.button.callback('⭐ 2 Puan', `puan_2_${ilanSahibiId}`), Markup.button.callback('⭐ 3 Puan', `puan_3_${ilanSahibiId}`)],
         [Markup.button.callback('⭐ 4 Puan', `puan_4_${ilanSahibiId}`), Markup.button.callback('⭐ 5 Puan', `puan_5_${ilanSahibiId}`)]
     ]);
 
-    const mesaj = await ctx.reply(
+    // Puan butonunu gruba gönder (Bu mesaj silinmeyecek!)
+    await ctx.reply(
         `🎉 **Takas Tamamlandı!**\n\n` +
         `Sayın @${ctx.from.username || ctx.from.first_name}, lütfen takas yaptığınız kişiye puan verin:`,
         { parse_mode: 'Markdown', reply_markup: puanButonu.reply_markup }
     );
 
-    // Temizlik: İlanı ve kullanıcının yazdığı /tamamlandi mesajını sil
+    // Sadece ilan mesajını ve kullanıcının yazdığı /tamamlandi komutunu sil
     try {
         await ctx.telegram.deleteMessage(ctx.chat.id, yanitlananMesaj.message_id);
         await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id);
-    } catch(e) {}
-
-    // Puan mesajını 1 dakika sonra sil
-    setTimeout(async () => {
-        try {
-            await ctx.telegram.deleteMessage(ctx.chat.id, mesaj.message_id);
-        } catch (e) {}
-    }, 60000);
+    } catch(e) {
+        console.log("Mesaj silinemedi (Yetki hatası olabilir):", e.message);
+    }
 });
 
 // 4. PUAN BUTONUNA TIKLANINCA
@@ -137,13 +133,11 @@ bot.action(/puan_(\d)_(\d+)/, async (ctx) => {
     const puan = parseInt(ctx.match[1]);
     const hedefId = ctx.match[2];
     
-    // Puanlayan kullanıcı, kendi kendine puan veremez
     if (ctx.from.id.toString() === hedefId) {
         return ctx.answerCbQuery('Kendinize puan veremezsiniz!', { show_alert: true });
     }
 
-    // Hedefin etiketini bulmak için son ilanlara bak (Basit bir çözüm)
-    // Gerçekte burada daha kompleks bir veritabanı sorgusu gerekebilir.
+    // Son ilanlardan hedefin etiketini bulmaya çalış
     const ilanlar = db.get('ilanlar') || [];
     const sonIlan = ilanlar.reverse().find(i => i.kullaniciId.toString() === hedefId);
     const hedefEtiket = sonIlan ? sonIlan.metin : '#KOKINA';
@@ -156,14 +150,11 @@ bot.action(/puan_(\d)_(\d+)/, async (ctx) => {
 
     const ortalama = (mevcutVeri.toplamPuan / mevcutVeri.oySayisi).toFixed(1);
     
-    // Butonun yazısını değiştir ve işlemi kapat
+    // Puanlama mesajını düzenle (Butonları kaldır, sonucu yaz. Bu mesaj silinmeyecek!)
     await ctx.editMessageText(`✅ **Puanınız Kaydedildi!**\n\nİlan Sahibi ID: ${hedefId}\nPuan: ${puan}\n📊 Ortalama: ${ortalama} (${mevcutVeri.oySayisi} oy)`);
-
-    setTimeout(async () => {
-        try {
-            await ctx.deleteMessage();
-        } catch (e) {}
-    }, 5000);
+    
+    // Tıklayan kişiye gizli bildirim gönder
+    await ctx.answerCbQuery('Puanınız başarıyla kaydedildi!');
 });
 
 // 5. YARDIM / MENÜ
