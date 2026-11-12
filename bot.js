@@ -51,7 +51,6 @@ bot.on('new_chat_members', async (ctx) => {
 
 // 2. AKILLI TAKAS SİSTEMİ (Tek Satırda Otomatik Tablo)
 bot.command('takas', async (ctx) => {
-    // Komuttan sonraki metni al (örn: "89 ağıl satılır")
     const metin = ctx.message.text.split(' ').slice(1).join(' ');
     
     if (!metin) {
@@ -65,16 +64,13 @@ bot.command('takas', async (ctx) => {
         );
     }
 
-    // İlanı tablo formatına sok
     const ilanTablo = `╔══════════════════════════╗\n` +
                       `   🏷️ **YENİ TAKAS İLANI** 🏷️\n` +
                       `╚══════════════════════════╝\n\n` +
                       `📝 **Açıklama:**\n${metin}\n\n` +
                       `👤 **İlan Sahibi:** @${ctx.from.username || ctx.from.first_name}\n\n` +
-                      `_Takas yapmak isteyenler lütfen ilan sahibine özelden yazsın._\n` +
-                      `_İşlem bittikten sonra ilana yanıt vererek /tamamlandi yazın._`;
+                      `_Takas bittiyse bu mesaja yanıt verip_ **/tamamlandi** _yazın._`;
 
-    // İlanı veritabanına kaydet (İleride lazım olur diye)
     const ilanlar = db.get('ilanlar') || [];
     ilanlar.push({ 
         metin: metin, 
@@ -84,7 +80,6 @@ bot.command('takas', async (ctx) => {
     });
     db.set('ilanlar', ilanlar);
 
-    // Tabloyu gruba gönder
     await ctx.reply(ilanTablo, { parse_mode: 'Markdown' });
 });
 
