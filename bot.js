@@ -14,6 +14,7 @@ const bot = new Telegraf(botToken);
 const db = new PureDB({ filePath: './hayday_db.json' });
 
 // --- YARDIMCI FONKSİYONLAR ---
+// Hay Day oyuncu etiketi kontrolü (Örn: #ABC123)
 function etiketGecerliMi(etiket) {
     return /^#[A-Z0-9]{2,10}$/i.test(etiket);
 }
@@ -27,7 +28,23 @@ bot.on('new_chat_members', async (ctx) => {
     }
 });
 
-// 2. Takas Kurallarını Hatırlatma
+// 2. Yardım / Menü Komutu
+bot.command(['yardim', 'menu', 'help'], async (ctx) => {
+    const menuMesaji = `🤖 **HAY DAY TAKAS BOTU - KOMUTLAR**\n\n` +
+        `Ben bir Hay Day takas asistanıyım. İşte size sunabileceğim komutlar:\n\n` +
+        `📜 **/kurallar**\nGrup kurallarını gösterir.\n\n` +
+        `🔄 **/takas [SATIŞ/ALIM] [ÜRÜN] [MİKTAR] [ETİKET]**\nGruba yeni bir takas veya alım-satım ilanı bırakır.\n_Örnek: /takas SATIŞ Buğday 100 #ABC123_\n\n` +
+        `✅ **/tamamlandi**\nBir ilana yanıt (reply) vererek yazarsanız, takasın bittiğini bildirir.\n\n` +
+        `⭐ **/puanver [ETİKET] [1-5]**\nTakas yaptığınız oyuncuya güven puanı verir.\n_Örnek: /puanver #ABC123 5_\n\n` +
+        `📊 **/puan [ETİKET]**\nBir oyuncunun güncel güven puanını ve oy sayısını gösterir.\n\n` +
+        `🎁 **/gunluk**\nGünlük aktiflik görevinizi tamamlayıp 10 güven puanı kazanmanızı sağlar.\n\n` +
+        `🚨 **/sikayet [ETİKET] [SEBEP]**\nDolandırıcılık veya kural ihlali durumunda şikayet iletir.\n\n` +
+        `_Beni kullanarak güvenli takas yapabilirsiniz. İyi oyunlar!_ 🎮`;
+
+    await ctx.reply(menuMesaji, { parse_mode: 'Markdown' });
+});
+
+// 3. Takas Kurallarını Hatırlatma
 bot.command('kurallar', async (ctx) => {
     const kurallar = `📜 **HAY DAY TAKAS KURALLARI**\n\n` +
         `1. Sadece Hay Day ile ilgili alım-satım ve takas ilanları verilebilir.\n` +
@@ -39,12 +56,12 @@ bot.command('kurallar', async (ctx) => {
     await ctx.reply(kurallar, { parse_mode: 'Markdown' });
 });
 
-// 3. Ürün Takası ve Alım-Satım İlanı Paylaşma
-bot.command('ilan', async (ctx) => {
+// 4. Ürün Takası ve Alım-Satım İlanı Paylaşma (/takas komutu)
+bot.command('takas', async (ctx) => {
     const mesaj = ctx.message.text.split(' ').slice(1);
     
     if (mesaj.length < 4) {
-        return ctx.reply(`⚠️ Eksik bilgi girdiniz.\n\n**Doğru Kullanım:**\n\`/ilan [SATIŞ/ALIM] [ÜRÜN] [MİKTAR] [ETİKET]\`\n\n**Örnek:**\n\`/ilan SATIŞ Buğday 100 #ABC123\``, { parse_mode: 'Markdown' });
+        return ctx.reply(`⚠️ Eksik bilgi girdiniz.\n\n**Doğru Kullanım:**\n\`/takas [SATIŞ/ALIM] [ÜRÜN] [MİKTAR] [ETİKET]\`\n\n**Örnek:**\n\`/takas SATIŞ Buğday 100 #ABC123\``, { parse_mode: 'Markdown' });
     }
 
     const tip = mesaj[0].toUpperCase();
@@ -52,7 +69,7 @@ bot.command('ilan', async (ctx) => {
     const miktar = mesaj[2];
     const etiket = mesaj[3];
 
-    // 4. Oyuncu Etiketi Kontrolü
+    // Oyuncu Etiketi Kontrolü
     if (!etiketGecerliMi(etiket)) {
         return ctx.reply('❌ Hatalı etiket formatı! Lütfen etiketi #ABC123 şeklinde girin.');
     }
@@ -73,7 +90,7 @@ bot.command('ilan', async (ctx) => {
     db.set('ilanlar', ilanlar);
 
     await ctx.reply(
-        `✅ **İLAN BAŞARIYLA YAYINLANDI**\n\n` +
+        `✅ **TAKAS İLANI YAYINLANDI**\n\n` +
         `📌 **Tip:** ${tip}\n` +
         `📦 **Ürün:** ${urun}\n` +
         `⚖️ **Miktar:** ${miktar}\n` +
@@ -124,7 +141,7 @@ bot.command('puanver', async (ctx) => {
     await ctx.reply(`✅ **Puanınız Kaydedildi!**\n\nOyuncu: ${hedefEtiket}\nVerdiğiniz Puan: ${puan}\n\n📊 **Oyuncunun Güncel Ortalaması:** ${ortalama} (${mevcutVeri.oySayisi} oy)`, { parse_mode: 'Markdown' });
 });
 
-// 7. Günlük Aktiflik Görevi ve 8. Günlük Ödüllü Görev
+// 7. Günlük Aktiflik Görevi
 bot.command('gunluk', async (ctx) => {
     const userId = ctx.from.id;
     const bugun = new Date().toISOString().split('T')[0]; 
@@ -144,7 +161,7 @@ bot.command('gunluk', async (ctx) => {
     await ctx.reply('✅ Günlük aktiflik göreviniz tamamlandı! Hesabınıza **10 güven puanı** eklendi. Yarın tekrar gelin!');
 });
 
-// 9. Dolandırıcılık Şikâyeti
+// 8. Dolandırıcılık Şikâyeti
 bot.command('sikayet', async (ctx) => {
     const args = ctx.message.text.split(' ').slice(1);
     if (args.length < 2) {
@@ -167,7 +184,7 @@ bot.command('sikayet', async (ctx) => {
     await ctx.reply(`🚨 **Şikayetiniz Alındı**\n\nYetkililer en kısa sürede inceleme yapacaktır. Lütfen kanıtlarınızı (ekran görüntüsü vb.) yöneticilere iletin.`);
 });
 
-// 10. Puan Sorgulama (Ekstra özellik)
+// 9. Puan Sorgulama
 bot.command('puan', async (ctx) => {
     const args = ctx.message.text.split(' ').slice(1);
     if (args.length < 1) {
@@ -187,9 +204,11 @@ bot.command('puan', async (ctx) => {
 });
 
 // --- BOTU BAŞLATMA ---
+// Render sunucusunda botun çalışmasını sağlayan ana komut
 bot.launch()
     .then(() => console.log('🤖 Hay Day Takas Botu başarıyla başlatıldı ve çalışıyor!'))
     .catch((err) => console.error('Bot başlatılırken hata oluştu:', err));
 
+// Olası çökmelerde botun düzgün kapanmasını sağlar
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
