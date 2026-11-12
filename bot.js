@@ -2,7 +2,7 @@ const { Telegraf, Markup } = require('telegraf');
 const { PureDB } = require('pure.db');
 const http = require('http');
 
-// --- RENDER PORT AYARI (Uyku modunu engellemek için) ---
+// --- RENDER PORT AYARI ---
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -30,13 +30,17 @@ function etiketGecerliMi(etiket) {
 
 // --- BOT KOMUTLARI ---
 
-// 1. YENİ ÜYE KARŞILAMA
+// 1. YENİ ÜYE KARŞILAMA (ETİKETLİ)
 bot.on('new_chat_members', async (ctx) => {
     for (const uye of ctx.message.new_chat_members) {
+        // Botun kendisi gruba eklendiyse karşılama yapmasın
         if (uye.id === bot.botInfo.id) continue; 
 
+        // Kullanıcıyı etiketleme formatı: [İsim](tg://user?id=ID)
+        const etiketliIsim = `[${uye.first_name}](tg://user?id=${uye.id})`;
+
         const karsilamaMesaji = `🌿 **KOKİNA TAKAS GRUBU'NA HOŞ GELDİNİZ!**\n\n` +
-            `Aramıza katıldığınız için teşekkür ederiz.\n\n` +
+            `Aramıza katıldığınız için teşekkür ederiz ${etiketliIsim}.\n\n` +
             `Grubumuzda Hay Day ürün alım-satım ve takas işlemleri yapılmaktadır.\n\n` +
             `• Takas yaparken karşılıklı güvene önem veriniz.\n` +
             `• İlanlarınızı açık ve anlaşılır paylaşınız.\n` +
@@ -89,7 +93,6 @@ bot.command('tamamlandi', async (ctx) => {
         return ctx.reply('⚠️ Takası tamamladığınız ilanın mesajına **yanıt (reply)** vererek bu komutu kullanmalısınız.');
     }
 
-    // İlan sahibinin ID'sini mesajdan ayıklıyoruz
     let ilanSahibiId = null;
     if (yanitlananMesaj.text) {
         const idMatch = yanitlananMesaj.text.match(/ID: (\d+)/);
@@ -102,7 +105,6 @@ bot.command('tamamlandi', async (ctx) => {
         return ctx.reply('⚠️ İlan sahibi tespit edilemedi. Lütfen ilana yanıt verdiğinizden emin olun.');
     }
 
-    // Kendi ilanına puan vermesini engelle
     if (ctx.from.id.toString() === ilanSahibiId) {
          return ctx.reply('⚠️ Kendi ilanınızı tamamladınız. Puanı karşı taraf vermelidir.');
     }
@@ -137,7 +139,6 @@ bot.action(/puan_(\d)_(\d+)/, async (ctx) => {
         return ctx.answerCbQuery('Kendinize puan veremezsiniz!', { show_alert: true });
     }
 
-    // Son ilanlardan hedefin etiketini bulmaya çalış
     const ilanlar = db.get('ilanlar') || [];
     const sonIlan = ilanlar.reverse().find(i => i.kullaniciId.toString() === hedefId);
     const hedefEtiket = sonIlan ? sonIlan.metin : '#KOKINA';
