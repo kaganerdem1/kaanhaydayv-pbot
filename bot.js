@@ -1,4 +1,4 @@
-const { Telegraf, Markup } = require('telegraf');
+const { Telegraf } = require('telegraf');
 const { PureDB } = require('pure.db');
 const http = require('http');
 
@@ -30,10 +30,9 @@ function etiketGecerliMi(etiket) {
 
 // --- BOT KOMUTLARI ---
 
-// 1. YENİ ÜYE KARŞILAMA (İstediğin Metin)
+// 1. YENİ ÜYE KARŞILAMA (KOKİNA TAKAS)
 bot.on('new_chat_members', async (ctx) => {
     for (const uye of ctx.message.new_chat_members) {
-        // Botun kendisi gruba eklendiyse karşılama yapmasın
         if (uye.id === bot.botInfo.id) continue; 
 
         const karsilamaMesaji = `🌿 **KOKİNA TAKAS GRUBU'NA HOŞ GELDİNİZ!**\n\n` +
@@ -50,115 +49,54 @@ bot.on('new_chat_members', async (ctx) => {
     }
 });
 
-// 2. DETAYLI TAKAS SİSTEMİ (Adım Adım Sihirbaz)
+// 2. AKILLI TAKAS SİSTEMİ (Tek Satırda Otomatik Tablo)
 bot.command('takas', async (ctx) => {
-    const userId = ctx.from.id;
+    // Komuttan sonraki metni al (örn: "89 ağıl satılır")
+    const metin = ctx.message.text.split(' ').slice(1).join(' ');
     
-    // Eski yarım kalmış işlemleri sıfırla
-    db.set(`takas_islemi_${userId}`, { adim: 'tip' });
-
-    await ctx.reply(
-        `🔄 **Yeni Takas İlanı Oluşturuyorsunuz**\n\n` +
-        `Lütfen ne yapmak istediğinizi seçin:`,
-        Markup.inlineKeyboard([
-            [Markup.button.callback('📤 SATIŞ Yapıyorum (Ürün Veriyorum)', `takas_tip_SATIŞ_${userId}`)],
-            [Markup.button.callback('📥 ALIM Yapıyorum (Ürün İstiyorum)', `takas_tip_ALIM_${userId}`)]
-        ])
-    );
-});
-
-// Takas Tipi Seçildiğinde (Butona tıklanınca)
-bot.action(/takas_tip_(SATIŞ|ALIM)_(\d+)/, async (ctx) => {
-    const tip = ctx.match[1];
-    const hedefUserId = ctx.match[2];
-
-    // Güvenlik kontrolü: Sadece komutu başlatan kişi butona basabilsin
-    if (ctx.from.id.toString() !== hedefUserId) {
-        return ctx.answerCbQuery('Bu işlem sizin için değil.', { show_alert: true });
+    if (!metin) {
+        return ctx.reply(
+            `⚠️ Lütfen takas detaylarını yazın.\n\n` +
+            `**Örnek Kullanım:**\n` +
+            `\`/takas 89 ağıl satılır\`\n` +
+            `\`/takas 50 buğday alınır\`\n` +
+            `\`/takas 200 çivi satılık\``,
+            { parse_mode: 'Markdown' }
+        );
     }
 
-    await ctx.answerCbQuery();
-    await ctx.editMessageText(`Seçiminiz: **${tip}**\n\nŞimdi takas etmek istediğiniz **ÜRÜNÜN ADINI** yazın.\n_(Örnek: Buğday, Çivi, Testere vb.)_`, { parse_mode: 'Markdown' });
-
-    const mevcutIslem = db.get(`takas_islemi_${hedefUserId}`) || {};
-    mevcutIslem.tip = tip;
-    mevcutIslem.adim = 'urun';
-    db.set(`takas_islemi_${hedefUserId}`, mevcutIslem);
-});
-
-// Metin Girdilerini Yakalama (Ürün, Miktar, Etiket, Karşılık)
-bot.on('text', async (ctx, next) => {
-    const userId = ctx.from.id;
-    const islem = db.get(`takas_islemi_${userId}`);
-
-    // Eğer kullanıcının aktif bir takas işlemi yoksa diğer komutlara geç
-    if (!islem || !islem.adim) return next();
-
-    const metin = ctx.message.text.trim();
-
-    if (islem.adim === 'urun') {
-        islem.urun = metin;
-        islem.adim = 'miktar';
-        db.set(`takas_islemi_${userId}`, islem);
-        return ctx.reply(`✅ Ürün: **${metin}**\n\nŞimdi bu ürünün **MİKTARINI** yazın. _(Sadece sayı girin, Örnek: 100)_`, { parse_mode: 'Markdown' });
-    }
-
-    if (islem.adim === 'miktar') {
-        if (isNaN(metin)) return ctx.reply('❌ Lütfen sadece sayı girin. Örnek: 50');
-        islem.miktar = metin;
-        islem.adim = 'etiket';
-        db.set(`takas_islemi_${userId}`, islem);
-        return ctx.reply(`✅ Miktar: **${metin}**\n\nŞimdi Hay Day **OYUNCU ETİKETİNİZİ** yazın.\n_(Örnek: #ABC123)_`, { parse_mode: 'Markdown' });
-    }
-
-    if (islem.adim === 'etiket') {
-        if (!etiketGecerliMi(metin)) {
-            return ctx.reply('❌ Hatalı etiket formatı! Lütfen #ABC123 şeklinde girin.');
-        }
-        islem.etiket = metin.toUpperCase();
-        islem.adim = 'karsilik';
-        db.set(`takas_islemi_${userId}`, islem);
-        return ctx.reply(`✅ Etiket: **${metin.toUpperCase()}**\n\nSon olarak, bu takas karşılığında **NE İSTEDİĞİNİZİ** (veya "Ücretsiz" yazın) belirtin.`, { parse_mode: 'Markdown' });
-    }
-
-    if (islem.adim === 'karsilik') {
-        islem.karsilik = metin;
-        islem.adim = 'bitti';
-        db.set(`takas_islemi_${userId}`, islem);
-
-        // İşlem bitti, tabloyu oluştur
-        await ctx.reply('⏳ İlanınız hazırlanıyor...');
-
-        const tablo = `╔══════════════════════════╗\n` +
-                      `   🏷️ **TAKAS TALEP TABLOSU** 🏷️\n` +
+    // İlanı tablo formatına sok
+    const ilanTablo = `╔══════════════════════════╗\n` +
+                      `   🏷️ **YENİ TAKAS İLANI** 🏷️\n` +
                       `╚══════════════════════════╝\n\n` +
-                      `📌 **İşlem Tipi:** ${islem.tip === 'SATIŞ' ? '📤 SATIŞ (Ürün Veriyorum)' : '📥 ALIM (Ürün İstiyorum)'}\n` +
-                      `📦 **Ürün:** ${islem.urun}\n` +
-                      `⚖️ **Miktar:** ${islem.miktar}\n` +
-                      `🏷️ **Oyuncu Etiketi:** ${islem.etiket}\n` +
-                      `🔄 **Karşılığında İstenen:** ${islem.karsilik}\n` +
+                      `📝 **Açıklama:**\n${metin}\n\n` +
                       `👤 **İlan Sahibi:** @${ctx.from.username || ctx.from.first_name}\n\n` +
                       `_Takas yapmak isteyenler lütfen ilan sahibine özelden yazsın._\n` +
                       `_İşlem bittikten sonra ilana yanıt vererek /tamamlandi yazın._`;
 
-        // Tabloyu gruba gönder (Eğer özelden yazdıysa gruba da göndermek isteyebilir, ama şimdilik yazdığı yere atıyoruz)
-        await ctx.reply(tablo, { parse_mode: 'Markdown' });
+    // İlanı veritabanına kaydet (İleride lazım olur diye)
+    const ilanlar = db.get('ilanlar') || [];
+    ilanlar.push({ 
+        metin: metin, 
+        kullaniciId: ctx.from.id, 
+        kullaniciAdi: ctx.from.username || ctx.from.first_name, 
+        tarih: new Date().toISOString() 
+    });
+    db.set('ilanlar', ilanlar);
 
-        // İşlemi temizle
-        db.delete(`takas_islemi_${userId}`);
-    }
+    // Tabloyu gruba gönder
+    await ctx.reply(ilanTablo, { parse_mode: 'Markdown' });
 });
 
 // 3. Yardım / Menü
 bot.command(['yardim', 'menu', 'help'], async (ctx) => {
-    const menuMesaji = `🤖 **HAY DAY TAKAS BOTU - KOMUTLAR**\n\n` +
+    const menuMesaji = `🤖 **KOKİNA HAY DAY TAKAS BOTU**\n\n` +
         `📜 **/kurallar**\nGrup kurallarını gösterir.\n\n` +
-        `🔄 **/takas**\nAdım adım takas ilanı oluşturur.\n\n` +
+        `🔄 **/takas [İlan Metni]**\nOtomatik takas tablosu oluşturur.\n_Örnek: /takas 89 ağıl satılır_\n\n` +
         `✅ **/tamamlandi**\nBir ilana yanıt vererek takasın bittiğini bildirir.\n\n` +
         `⭐ **/puanver [ETİKET] [1-5]**\nOyuncuya güven puanı verir.\n\n` +
         `📊 **/puan [ETİKET]**\nOyuncunun güven puanını gösterir.\n\n` +
-        `🎁 **/gunluk**\nGünlük görevinizi tamamlar.\n\n` +
-        `🚨 **/sikayet [ETİKET] [SEBEP]**\nŞikayet iletir.`;
+        `🎁 **/gunluk**\nGünlük görevinizi tamamlar.`;
     await ctx.reply(menuMesaji, { parse_mode: 'Markdown' });
 });
 
@@ -189,7 +127,7 @@ bot.command('puanver', async (ctx) => {
     const hedefEtiket = args[0].toUpperCase();
     const puan = parseInt(args[1]);
 
-    if (!etiketGecerliMi(hedefEtiket)) return ctx.reply('❌ Geçersiz etiket formatı.');
+    if (!etiketGecerliMi(hedefEtiket)) return ctx.reply('❌ Geçersiz etiket formatı. (Örnek: #ABC123)');
     if (isNaN(puan) || puan < 1 || puan > 5) return ctx.reply('❌ Lütfen 1 ile 5 arasında bir puan girin.');
 
     const anahtar = `puanlar_${hedefEtiket}`;
